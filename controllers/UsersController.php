@@ -4,6 +4,7 @@ namespace app\controllers;
 
 use app\models\User;
 use yii\web\Controller;
+use Yii;
 
 class UsersController extends Controller
 {
@@ -40,7 +41,22 @@ class UsersController extends Controller
      * ];
      * } */
 
+    public function actionView($id)
+    {
+        $user = User::findOne($id);
+        return $this->render('view', ['user' => $user]);
+    }
 
+    public function actionUpdate($id)
+    {
+        $user = User::findOne($id);
+
+        if ($user->load(Yii::$app->request->post()) && $user->save()) {
+            return $this->redirect(['view', 'id' => $user->id]);
+        } else {
+            return $this->render('update', ['user' => $user]);
+        }
+    }
     public function actionActivate($id)
     {
         $user = User::findOne($id);

@@ -5,7 +5,7 @@ use yii\helpers\Html;
 foreach ($users as $user): ?>
     <div>
         <span><?= $user->username ?></span>
-        <?= Html::a('Деактивировать', ['deactivate', 'id' => $user->id], ['class' => 'btn btn-danger']) ?>
+        <?= Html::a('Заблокировать', ['deactivate', 'id' => $user->id], ['class' => 'btn btn-danger']) ?>
     </div>
 <?php endforeach; ?>
 
@@ -23,10 +23,10 @@ foreach ($users as $user): ?>
 
     <td>
         <?php if ($user->status == 'active'): ?>
-        <a href="<?= Yii::$app->urlManager->createUrl(['users/deactivate', 'id' =>$user->id])?>"> Деактивировать </a>
+        <a href="<?= Yii::$app->urlManager->createUrl(['users/deactivate', 'id' =>$user->id])?>"> Заблокировать </a>
 
         <?php else: ?>
-        <a href="<?= Yii::$app->urlManager->createUrl(['users/activate', 'id' =>$user->id])?>"> Активировать </a>
+        <a href="<?= Yii::$app->urlManager->createUrl(['users/activate', 'id' =>$user->id])?>"> Разблокировать </a>
         <?php endif; ?>
     </td>
     </tr>

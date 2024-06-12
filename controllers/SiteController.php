@@ -187,5 +187,20 @@ class SiteController extends Controller
             }
         }
     }
+    public function actionAddFriend($id)
+    {
+        $user = User::findOne($id);
+
+        if ($user) {
+            $currentUser = Yii::$app->user->identity;
+
+            $currentUser->friends .= ',' . $id;
+            $currentUser->save();
+
+            return $this->redirect(['view', 'id' => $currentUser->id]);
+        }
+
+        throw new NotFoundHttpException();
+    }
 
 }
