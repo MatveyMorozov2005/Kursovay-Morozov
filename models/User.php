@@ -3,118 +3,263 @@
 namespace app\models;
 
 use Yii;
+use yii\base\Model;
 use yii\base\NotSupportedException;
-use yii\behaviors\TimestampBehavior;
 use yii\db\ActiveRecord;
+use yii\helpers\ArrayHelper;
 use yii\web\IdentityInterface;
+use yii\web\UploadedFile;
 
 /**
- * User model
+ * This is the model class for table "user".
  *
- * @property integer $id
+ * @property string $id
+ * @property string $email
  * @property string $username
  * @property string $password_hash
- * @property string $password_reset_token
- * @property string $email
+ * @property string $salt
  * @property string $auth_key
- * @property integer $status
- * @property integer $created_at
- * @property integer $updated_at
- * @property string $password write-only password
+ * @property string $access_token
+ * @property string $verification_token
+ * @property int $status
+ *
+ * @property Profile $profile
+ * @property User[] $followers
+ * @property Friendship[] $friendships
+ * @property Conversation[] $conversations
+ * @property ConversationMessage[] $conversationMessages
+ * @property UserHasConversation[] $userHasConversations
  */
-
-
 class User extends ActiveRecord implements IdentityInterface
 {
-    const STATUS_DELETED = 1;
-    const STATUS_ACTIVE = 0;
+    const STATUS_BLOCKED = 0;
+    const STATUS_ACTIVE = 1;
+
+
+    public $role;
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
      */
     public static function tableName()
     {
-        return '{{%user}}';
+        return 'user';
     }
 
     /**
-     * @inheritdoc
+     * @param int|string $id
+     * @return User|null|IdentityInterface
      */
-    public function behaviors()
+    public static function findIdentity($id)
     {
-        return [
-            TimestampBehavior::className(),
-        ];
+        return static::findOne($id);
     }
 
-    public static function getUsersWithSorting(): array
-    {
-        $activeusers = self::find()->where(['status' => '0'])->all();
-        $inactiveUsers = self::find()->where(['status'=> '1'])->all();
-        $users = array_merge($activeusers,$inactiveUsers);
-        return $users;
-    }
     /**
-     * @inheritdoc
+     * @param mixed $token
+     * @param null $type
+     * @return void|IdentityInterface
+     * @throws NotSupportedException
+     */
+    public static function findIdentityByAccessToken($token, $type = null)
+    {
+        throw new NotSupportedException('findIdentityByAccessToken is not implemented.');
+    }
+
+    /**
+     * @param $verification_token
+     * @return User|null
+     */
+    public static function findIdentityByVerificationToken($verification_token)
+    {
+        return static::findOne(['verification_token' => $verification_token]);
+    }
+
+    /**
+     * @param $username
+     * @return User|null
+     */
+    public static function findByUsername($username)
+    {
+        return static::findOne(['username' => $username]);
+    }
+
+    public function afterFind()
+    {
+        $roles = $this->getRoles();
+        $role = array_shift($roles);
+        $this->role = $role->name;
+        parent::afterFind();
+    }
+
+    /**
+     * @return \yii\rbac\Role[]
+     */
+    public function getRoles()
+    {
+        return Yii::$app->authManager->getRolesByUser($this->id);
+    }
+
+    /**
+     * {@inheritdoc}
      */
     public function rules()
     {
         return [
-            ['status', 'default', 'value' => self::STATUS_ACTIVE],
-            ['status', 'in', 'range' => [self::STATUS_ACTIVE, self::STATUS_DELETED]],
-            ['email', 'safe'],
+            [['email'], 'string', 'max' => 64],
+            [['username', 'salt', 'auth_key', 'verification_token'], 'string', 'max' => 32],
+            [['password_hash'], 'string', 'max' => 60],
+            [['status'], 'in', 'range' => array_keys(self::getStatuses())],
+            [['role'], 'string'],
         ];
     }
 
     /**
-     * @inheritdoc
-     */
-    public static function findIdentity($id)
-    {
-        return static::findOne(['id' => $id, 'status' => self::STATUS_ACTIVE]);
-    }
-
-    /**
-     * @inheritdoc
-     */
-    public static function findIdentityByAccessToken($token, $type = null)
-    {
-        throw new NotSupportedException('"findIdentityByAccessToken" is not implemented.');
-    }
-
-    /**
-     * Finds user by username
+     * Get statuses array
      *
-     * @param string $username
-     * @return static|null
+     * @return array
      */
-    public static function findByUsername($username)
+    public function getStatuses()
     {
-        return static::findOne(['username' => $username, 'status' => self::STATUS_ACTIVE]);
+        return [
+            self::STATUS_BLOCKED => 'blocked',
+            self::STATUS_ACTIVE => 'active',
+
+        ];
     }
 
     /**
-     * @inheritdoc
+     * {@inheritdoc}
+     */
+    public function attributeLabels()
+    {
+        return [
+            'id' => 'ID',
+            'email' => 'Email',
+            'username' => 'Username',
+            'password_hash' => 'Password Hash',
+            'salt' => 'Salt',
+            'auth_key' => 'Auth Key',
+            'verification_token' => 'Verification Token',
+            'status' => 'Status',
+        ];
+    }
+
+    /**
+     * @return array
+     */
+    public function getRolesArray()
+    {
+        return ArrayHelper::map(Yii::$app->authManager->getRoles(), 'name', 'name');
+    }
+
+    /**
+     * Check if user is logged
+     *
+     * @return bool
+     */
+    public function isLogged()
+    {
+        return Yii::$app->user->identity->getId() === $this->id;
+    }
+
+    /**
+     * @param $id
+     * @return bool
+     */
+    public function hasFollower($id)
+    {
+        return $this->getFriendships()->where(['second_user_id' => $id])->exists();
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getFriendships()
+    {
+        return $this->hasMany(Friendship::className(), ['first_user_id' => 'id']);
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+
+    /**
+     * @param $id
+     * @return bool
+     */
+    public function hasConversation($id)
+    {
+        return $this->getConversations()->where(['id' => $id])->exists();
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getConversations()
+    {
+        return $this->hasMany(Conversation::className(), ['id' => 'conversation_id'])
+            ->via('userHasConversations');
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getFollowers()
+    {
+        return $this->hasMany(User::className(), ['id' => 'second_user_id'])->via('friendships');
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getProfile()
+    {
+        return $this->hasOne(Profile::className(), ['user_id' => 'id']);
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getConversationMessages()
+    {
+        return $this->hasMany(ConversationMessage::className(), ['user_id' => 'id']);
+    }
+
+    /**
+     * @return \yii\db\ActiveQuery
+     */
+    public function getUserHasConversations()
+    {
+        return $this->hasMany(UserHasConversation::className(), ['user_id' => 'id']);
+    }
+
+    /**
+     * Get status name
+     *
+     * @return mixed
+     */
+    public function getStatusName()
+    {
+        return self::getStatuses()[$this->status];
+    }
+
+    /**
+     * @return int|string
      */
     public function getId()
     {
-        return $this->getPrimaryKey();
+        return $this->id;
     }
-    public function getUser()
+
+    public function getUsername()
     {
-        return $this->hasOne(User::class,['id'=>'user']);
+        return $this->username;
     }
 
     /**
-     * @inheritdoc
-     */
-    public function getAuthKey()
-    {
-        return $this->auth_key;
-    }
-
-    /**
-     * @inheritdoc
+     * @param string $authKey
+     * @return bool
      */
     public function validateAuthKey($authKey)
     {
@@ -122,32 +267,112 @@ class User extends ActiveRecord implements IdentityInterface
     }
 
     /**
-     * Validates password
-     *
-     * @param string $password password to validate
-     * @return bool if password provided is valid for current user
+     * @return string
      */
-    public function validatePassword($password)
+    public function getAuthKey()
     {
-        return Yii::$app->security->validatePassword($password, $this->password_hash);
+        return $this->auth_key;
     }
 
     /**
-     * Generates password hash from password and sets it to the model
-     *
-     * @param string $password
+     * @param $password_hash
+     * @return string
+     * @throws \yii\base\Exception
      */
-    public function setPassword($password)
+    public function setPassword($password_hash)
     {
-        $this->password_hash = Yii::$app->security->generatePasswordHash($password);
+        return $this->password_hash = Yii::$app->security->generatePasswordHash($password_hash);
     }
 
     /**
-     * Generates "remember me" authentication key
+     * @param $password_hash
+     * @return bool
+     */
+    public function validatePassword($password_hash)
+    {
+        return Yii::$app->security->validatePassword($password_hash, $this->password_hash);
+    }
+
+    /**
+     * @param bool $insert
+     * @return bool
+     * @throws \yii\base\Exception
+     */
+    public function beforeSave($insert)
+    {
+        if (parent::beforeSave($insert)) {
+            if ($this->isNewRecord) {
+                $this->generateAuthKey();
+                $this->generateVerificationToken();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @return string
+     * @throws \yii\base\Exception
      */
     public function generateAuthKey()
     {
-        $this->auth_key = Yii::$app->security->generateRandomString();
+        return $this->auth_key = Yii::$app->security->generateRandomString();
     }
 
+    /**
+     * @return string
+     * @throws \yii\base\Exception
+     */
+    public function generateVerificationToken()
+    {
+        return $this->verification_token = Yii::$app->security->generateRandomString();
+    }
+
+    public
+    function sendConfirmEmail()
+    {
+        return Yii::$app->mailer->compose(['html' => 'user-verify-html'], ['user' => $this])
+            ->setFrom([Yii::$app->params['adminEmail'] => Yii::$app->name])
+            ->setTo($this->email)
+            ->setSubject('Email confirmation for ' . Yii::$app->name)
+            ->send();
+    }
+
+    public
+    function verify()
+    {
+        $this->verification_token = null;
+        $this->status = self::STATUS_ACTIVE;
+        return $this->save();
+    }
+
+    /**
+     * @param bool $runValidation
+     * @param null $attributeNames
+     * @return bool
+     * @throws \Exception
+     */
+    public function save($runValidation = true, $attributeNames = null)
+    {
+        if (parent::save($runValidation, $attributeNames)) {
+            if (!isset($this->profile)) {
+                $profile = new Profile();
+                $profile->setDefaultImage();
+                $profile->link('user', $this);
+            }
+
+            $authManager = Yii::$app->authManager;
+            $role = !isset($this->role) ? 'user' : $this->role;
+            if (!$authManager->getAssignment($role, $this->id)) {
+                if (count($authManager->getAssignments($this->id))) {
+                    $authManager->revokeAll($this->id);
+                }
+
+                $userRole = $authManager->getRole($role);
+                $authManager->assign($userRole, $this->id);
+            }
+            return true;
+        }
+        return false;
+    }
 }

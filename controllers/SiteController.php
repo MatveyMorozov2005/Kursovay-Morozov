@@ -2,23 +2,17 @@
 
 namespace app\controllers;
 
-//...
-use app\models\LoginForm;
-use app\models\ContactForm;
-use app\models\ProfileForm;
 use app\models\SignupForm;
 use app\models\User;
 use Yii;
 use yii\filters\AccessControl;
-use yii\filters\VerbFilter;
 use yii\web\Controller;
 use yii\web\Response;
-
+use yii\filters\VerbFilter;
+use app\models\LoginForm;
 
 class SiteController extends Controller
 {
-
-    //...
     /**
      * {@inheritdoc}
      */
@@ -26,18 +20,23 @@ class SiteController extends Controller
     {
         return [
             'access' => [
-                'class' => AccessControl::class,
-                'only' => ['logout'],
+                'class' => AccessControl::className(),
+                'only' => ['logout', 'login', 'signup'],
                 'rules' => [
                     [
                         'actions' => ['logout'],
                         'allow' => true,
                         'roles' => ['@'],
                     ],
+                    [
+                        'allow' => true,
+                        'actions' => ['login', 'signup'],
+                        'roles' => ['?'],
+                    ],
                 ],
             ],
             'verbs' => [
-                'class' => VerbFilter::class,
+                'class' => VerbFilter::className(),
                 'actions' => [
                     'logout' => ['post'],
                 ],
@@ -68,14 +67,7 @@ class SiteController extends Controller
      */
     public function actionIndex()
     {
-        $hello = 'Hello world';
-        $hello2 = & $hello;
-        $hello2 = '2222sdkfsdlfjdslkj222';
-
-        return $this->render('index', [
-            'params1' => $hello,
-            'hello2' => $hello2,
-        ]);
+        return $this->render('index');
     }
 
     /**
@@ -100,22 +92,6 @@ class SiteController extends Controller
         ]);
     }
 
-    public function actionEntry()
-    {
-        $model = new ProfileForm();
-
-        if ($model->load(Yii::$app->request->post()) && $model->validate()) {
-            // данные в $model удачно проверены
-
-            // делаем что-то полезное с $model ...
-
-            return $this->render('entry-confirm', ['model' => $model]);
-        } else {
-            // либо страница отображается первый раз, либо есть ошибка в данных
-            return $this->render('entry', ['model' => $model]);
-        }
-    }
-
     /**
      * Logout action.
      *
@@ -129,44 +105,20 @@ class SiteController extends Controller
     }
 
     /**
-     * Displays contact page.
+     * Sign-up action
      *
-     * @return Response|string
+     * @return string|Response
+     * @throws \yii\base\Exception
      */
-    public function actionContact()
-    {
-        $this->layout = 'print';
-
-        $model = new ContactForm();
-        if ($model->load(Yii::$app->request->post()) && $model->contact(Yii::$app->params['adminEmail'])) {
-            Yii::$app->session->setFlash('contactFormSubmitted');
-
-            return $this->refresh();
-        }
-        return $this->render('contact', [
-            'model' => $model,
-        ]);
-    }
-
-    /**
-     * Displays about page.
-     *
-     * @return string
-     */
-    public function actionAbout()
-    {
-        return $this->render('about');
-    }
     public function actionSignup()
     {
-        $model = new SignupForm();
+        if (!Yii::$app->user->isGuest) {
+            return $this->goHome();
+        }
 
-        if ($model->load(Yii::$app->request->post())) {
-            if ($user = $model->signup()) {
-                if (Yii::$app->getUser()->login($user)) {
-                    return $this->goHome();
-                }
-            }
+        $model = new SignupForm();
+        if ($model->load(Yii::$app->request->post()) && $model->signup()) {
+            return $this->goHome();
         }
 
         return $this->render('signup', [
@@ -174,33 +126,19 @@ class SiteController extends Controller
         ]);
     }
 
-    public function actionAddAdmin() {
-        $model = User::find()->where(['username' => 'admin'])->one();
-        if (empty($model)) {
-            $user = new User();
-            $user->username = 'admin';
-            $user->email = 'admin@кодер.укр';
-            $user->setPassword('admin');
-            $user->generateAuthKey();
-            if ($user->save()) {
-                echo 'good';
-            }
-        }
-    }
-    public function actionAddFriend($id)
+    /**
+     * @param $token
+     * @return string
+     */
+    public function actionVerifyUser($token)
     {
-        $user = User::findOne($id);
-
-        if ($user) {
-            $currentUser = Yii::$app->user->identity;
-
-            $currentUser->friends .= ',' . $id;
-            $currentUser->save();
-
-            return $this->redirect(['view', 'id' => $currentUser->id]);
-        }
-
-        throw new NotFoundHttpException();
+        if ($user = User::findIdentityByVerificationToken($token))
+            if ($user->verify()) {
+                Yii::$app->session->setFlash('success', 'Account verified!');
+                Yii::$app->user->login($user);
+                return $this->render('index');
+            }
+        Yii::$app->session->setFlash('danger', 'Invalid token.');
+        return $this->render('index');
     }
-
 }
